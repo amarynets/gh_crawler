@@ -1,7 +1,6 @@
+import asyncio
 import json
-import random
 import logging
-from collections import deque
 
 import aiohttp
 
@@ -14,7 +13,6 @@ logging.basicConfig(
 )
 
 logger = logging.getLogger(__name__)
-
 
 
 class ParserTypes:
@@ -33,30 +31,35 @@ class Crawler:
         self.keywords = keywords
         self.proxies = proxies
         self.type = type.lower()
+        # TODO handle unexpected type
         self.parser = PARSER_REGISTRY[self.type]()
-        self.queue = deque()
+        self.queue = asyncio.Queue()
         self.buffer = []
         self.logger = logger
+        self.logger.info(f"Initialized crawler with {len(keywords)} keywords and {len(proxies)} proxies")
+        self.semaphore = asyncio.Semaphore(5)
+        self.session = aiohttp.ClientSession()
 
 
-    def start(self):
+    async def start(self):
         urls = [
             f'https://github.com/search?q={keyword}&type={self.type}'
             for keyword in self.keywords
         ]
         for url in urls:
             request = Request(url, self.parser.parse_search_page)
-            self.queue.append(request)
+            await self.queue.put(request)
 
     async def orchestrate(self, obj):
+        # TODO Make async
         if isinstance(obj, Request):
             self.logger.info('Send request to %s', obj.url)
             response = await self.request(obj)
-            self.queue.append(response)
+            await self.queue.put(response)
         elif isinstance(obj, Response):
             self.logger.info('Get response from %s', obj.request.url)
             for obj in self.response(obj):
-                self.queue.append(obj)
+                await self.queue.put(obj)
         elif isinstance(obj, Item):
             self.logger.info('Item: %s', obj)
             self.item(obj)
@@ -64,14 +67,10 @@ class Crawler:
             raise
 
     async def request(self, request: Request):
-        async with aiohttp.ClientSession() as session:
-            async with session.get(
-                    request.url,
-                    # proxy=random.choice(self.proxies)
-            ) as response:
+        async with self.semaphore:
+            async with self.session.get(request.url) as response:
                 html = await response.text()
-                resp = Response(response.url, response, html, request)
-                return resp
+                return Response(response.url, response, html, request)
 
     def response(self, response: Response):
         yield from response.request.parse_function(response)
@@ -81,8 +80,26 @@ class Crawler:
 
     async def crawl(self):
         self.logger.info('Start crawler')
-        self.start()
-        while self.queue:
-            obj = self.queue.popleft()
-            await self.orchestrate(obj)
-        print(self.buffer)
+
+        await self.start()
+        worker_count = 5
+        workers = [asyncio.create_task(self.worker()) for _ in range(worker_count)]
+
+        await self.queue.join()
+
+        for _ in range(worker_count):
+            await self.queue.put(None)
+
+        await asyncio.gather(*workers, return_exceptions=True)
+        await self.session.close()
+        result = [item.serialize() for item in self.buffer]
+        with open('output.json', 'w') as f:
+            json.dump(result, f, indent=2)
+
+    async def worker(self):
+        while True:
+            obj = await self.queue.get()
+            try:
+                await self.orchestrate(obj)
+            finally:
+                self.queue.task_done()

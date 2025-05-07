@@ -26,3 +26,6 @@ class Response:
 class Item:
     url: str
     extra: Optional[dict] = None
+
+    def serialize(self):
+        return {'url': self.url, 'extra': self.extra}
