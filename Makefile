@@ -15,4 +15,4 @@ test:
 	python -m coverage run -m pytest tests/
 
 coverage:
-	python -m coverage report
+	coverage run -m pytest && coverage report

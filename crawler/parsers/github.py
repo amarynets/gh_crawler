@@ -25,8 +25,7 @@ class GHSearchPageParser(BaseParser):
         item = response.meta['item']
         soup = BeautifulSoup(response.body, features="html.parser")
         item.extra = {
-            'owner': soup.select_one('qbsearch-input.search-input').attrs.get('data-current-owner'),
-            # TODO issue with first item
+            'owner': soup.select_one('a[data-hovercard-type="organization"]').text.strip(),
             'language_stats': {
                 tag.select('span')[0].text: float(tag.select('span')[1].text.strip('%'))
                 for tag in soup.select_one('div.Layout-sidebar h2:-soup-contains("Languages")').parent.select('ul.list-style-none li a') if tag.select_one('span.color-fg-default.text-bold.mr-1')

@@ -1,6 +1,8 @@
 import asyncio
 import json
 import logging
+import random
+import ssl
 
 import aiohttp
 
@@ -9,7 +11,7 @@ from crawler.core import Response, Request, Item
 
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    format='%(asctime)s:%(name)s:%(levelname)s - %(message)s'
 )
 
 logger = logging.getLogger(__name__)
@@ -38,7 +40,12 @@ class Crawler:
         self.logger = logger
         self.logger.info(f"Initialized crawler with {len(keywords)} keywords and {len(proxies)} proxies")
         self.semaphore = asyncio.Semaphore(5)
-        self.session = aiohttp.ClientSession()
+        ssl_context = ssl.create_default_context()
+        ssl_context.check_hostname = False
+        ssl_context.verify_mode = ssl.CERT_NONE
+        connector = aiohttp.TCPConnector(ssl=ssl_context)
+        self.session = aiohttp.ClientSession(connector=connector)
+
 
 
     async def start(self):
@@ -64,13 +71,22 @@ class Crawler:
             self.logger.info('Item: %s', obj)
             self.item(obj)
         else:
+            self.logger.info('Crawl queue is empty. Exiting')
             raise
 
     async def request(self, request: Request):
         async with self.semaphore:
-            async with self.session.get(request.url) as response:
-                html = await response.text()
-                return Response(response.url, response, html, request)
+                proxy = None
+                if self.proxies:
+                    proxy = random.choice(self.proxies)
+                    self.logger.info(f"Using proxy: {proxy}")
+                try:
+                    async with self.session.get(request.url, proxy=proxy) as response:
+                        html = await response.text()
+                        return Response(response.url, response, html, request)
+                except Exception as e:
+                    self.logger.exception('Exception during request: %s', request.url)
+                    return Response(request.url, None, None, request)
 
     def response(self, response: Response):
         yield from response.request.parse_function(response)
