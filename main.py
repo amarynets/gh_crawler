@@ -13,12 +13,9 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 async def main():
-    # input_data = json.load(sys.stdin)
-    input_data = {}
-    keywords = input_data.get("keywords", ['drone'])
-    # proxies = input_data.get("proxies", [])
-    # proxies = ['143.198.42.182:31280']
-    proxies = []
+    input_data = json.load(sys.stdin)
+    keywords = input_data.get("keywords", [])
+    proxies = input_data.get("proxies", [])
     type_ = input_data.get("type", "Repositories")
 
     if not keywords:
@@ -29,7 +26,7 @@ async def main():
     logger.info(f"Using type: {type_}")
     logger.info(f"Using {len(proxies)} proxies")
 
-    proxies = [f"https://{proxy}" if not proxy.startswith('http') else proxy for proxy in proxies]
+    proxies = [f"http://{proxy}" if not proxy.startswith('http') else proxy for proxy in proxies]
 
     crawler = Crawler(keywords, proxies, type_)
     await crawler.crawl()

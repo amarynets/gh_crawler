@@ -19,3 +19,4 @@ TODO
 2. Error handling
 3. Queue lock handling in case of error
 3. Middlewares
+4. Maybe add test for parser itself, but as it changed dynamically, not sure
