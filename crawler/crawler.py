@@ -1,4 +1,5 @@
 import asyncio
+from queue import Queue
 from urllib.parse import urljoin, urlparse
 import logging
 import random
@@ -22,11 +23,11 @@ PARSER_REGISTRY = {
 
 
 class Crawler:
-    def __init__(self, keywords: list[str], proxies: list[str], type: str, result_queue):
+    def __init__(self, keywords: list[str], proxies: list[str], type_: str, result_queue: Queue):
         self.keywords = keywords
         self.proxies = proxies
         self.proxy = random.choice(self.proxies) if self.proxies else None
-        self.type = type.lower()
+        self.type = type_.lower()
         # TODO handle unexpected type
         self.parser = PARSER_REGISTRY[self.type]()
         self.queue = asyncio.Queue()

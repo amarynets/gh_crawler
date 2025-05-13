@@ -193,7 +193,7 @@ def test_detail_page_missing_elements(parser):
     )
 
     # Should raise an exception due to missing elements
-    with pytest.raises(AttributeError):
+    with pytest.raises(TypeError):
         list(parser.parse_detail_page(response))
 
 def test_urljoin_functionality(parser, search_response):

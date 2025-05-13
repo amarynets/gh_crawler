@@ -29,7 +29,7 @@ class GHSearchPageParser(BaseParser):
         soup = BeautifulSoup(response.body, features="html.parser")
         try:
             owner_element = soup.select_one('a[data-hovercard-type="organization"], a[data-hovercard-type="user"]')
-            owner = owner_element.text.strip() if owner_element else "Unknown"
+            owner = owner_element.text.strip()
 
             language_stats = {}
             language_section = soup.select_one('div.Layout-sidebar h2:-soup-contains("Languages")')

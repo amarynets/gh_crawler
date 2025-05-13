@@ -1,4 +1,5 @@
 # At the top of your test file
+from queue import Queue
 from unittest.mock import Mock
 
 import pytest
@@ -20,7 +21,8 @@ from crawler.core import Response
 async def crawler():
     keywords = ["python", "async"]
     proxies = ["proxy1", "proxy2"]
-    crawler_instance = Crawler(keywords=keywords, proxies=proxies, type="repositories")
+    queue = Queue()
+    crawler_instance = Crawler(keywords=keywords, proxies=proxies, type_="repositories", result_queue=queue)
     yield crawler_instance
     await crawler_instance.session.close()
 
