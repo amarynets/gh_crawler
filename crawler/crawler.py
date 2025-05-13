@@ -1,5 +1,5 @@
 import asyncio
-import json
+from urllib.parse import urljoin, urlparse
 import logging
 import random
 import ssl
@@ -8,13 +8,6 @@ import aiohttp
 
 from crawler.parsers.github import GHSearchPageParser
 from crawler.core import Response, Request, Item
-
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s:%(name)s:%(levelname)s - %(message)s'
-)
-
-logger = logging.getLogger(__name__)
 
 
 class ParserTypes:
@@ -29,15 +22,16 @@ PARSER_REGISTRY = {
 
 
 class Crawler:
-    def __init__(self, keywords: list[str], proxies: list[str], type: str):
+    def __init__(self, keywords: list[str], proxies: list[str], type: str, result_queue):
         self.keywords = keywords
         self.proxies = proxies
+        self.proxy = random.choice(self.proxies) if self.proxies else None
         self.type = type.lower()
         # TODO handle unexpected type
         self.parser = PARSER_REGISTRY[self.type]()
         self.queue = asyncio.Queue()
-        self.buffer = []
-        self.logger = logger
+        self.result_queue = result_queue
+        self.logger = logging.getLogger(__name__)
         self.logger.info(f"Initialized crawler with {len(keywords)} keywords and {len(proxies)} proxies")
         self.semaphore = asyncio.Semaphore(5)
         ssl_context = ssl.create_default_context()
@@ -46,15 +40,10 @@ class Crawler:
         connector = aiohttp.TCPConnector(ssl=ssl_context)
         self.session = aiohttp.ClientSession(connector=connector)
 
-
-
     async def start(self):
-        urls = [
-            f'https://github.com/search?q={keyword}&type={self.type}'
-            for keyword in self.keywords
-        ]
-        for url in urls:
-            request = Request(url, self.parser.parse_search_page)
+        main_url = 'https://github.com/search'
+        for keyword in self.keywords:
+            request = Request(main_url, self.parser.parse_search_page, meta={'params': {'q': keyword, 'type': self.type}})
             await self.queue.put(request)
 
     async def orchestrate(self, obj):
@@ -72,16 +61,13 @@ class Crawler:
             self.item(obj)
         else:
             self.logger.info('Crawl queue is empty. Exiting')
-            raise
+            return
 
     async def request(self, request: Request):
         async with self.semaphore:
-                proxy = None
-                if self.proxies:
-                    proxy = random.choice(self.proxies)
-                    self.logger.info(f"Using proxy: {proxy}")
                 try:
-                    async with self.session.get(request.url, proxy=proxy) as response:
+                    params = request.meta.get('params', {})
+                    async with self.session.get(request.url, proxy=self.proxy, params=params) as response:
                         html = await response.text()
                         return Response(response.url, response, html, request)
                 except Exception as e:
@@ -92,7 +78,7 @@ class Crawler:
         yield from response.request.parse_function(response)
 
     def item(self, item: Item):
-        self.buffer.append(item)
+        self.result_queue.put(item)
 
     async def crawl(self):
         self.logger.info('Start crawler')
@@ -108,14 +94,13 @@ class Crawler:
 
         await asyncio.gather(*workers, return_exceptions=True)
         await self.session.close()
-        result = [item.serialize() for item in self.buffer]
-        with open('output.json', 'w') as f:
-            json.dump(result, f, indent=2)
 
     async def worker(self):
         while True:
             obj = await self.queue.get()
             try:
+                if obj is None:
+                    break
                 await self.orchestrate(obj)
             finally:
                 self.queue.task_done()
