@@ -1,10 +1,13 @@
-from typing import Any, Generator
+import logging
+from typing import Generator
 
 from bs4 import BeautifulSoup
 
 from crawler.core import Response, Item, Request
 from crawler.parsers import BaseParser
 
+
+logger = logging.getLogger(__name__)
 
 class GHSearchPageParser(BaseParser):
 
@@ -24,11 +27,30 @@ class GHSearchPageParser(BaseParser):
     def parse_detail_page(self, response) -> Generator[Item, None]:
         item = response.meta['item']
         soup = BeautifulSoup(response.body, features="html.parser")
-        item.extra = {
-            'owner': soup.select_one('a[data-hovercard-type="organization"]').text.strip(),
-            'language_stats': {
-                tag.select('span')[0].text: float(tag.select('span')[1].text.strip('%'))
-                for tag in soup.select_one('div.Layout-sidebar h2:-soup-contains("Languages")').parent.select('ul.list-style-none li a') if tag.select_one('span.color-fg-default.text-bold.mr-1')
+        try:
+            owner_element = soup.select_one('a[data-hovercard-type="organization"], a[data-hovercard-type="user"]')
+            owner = owner_element.text.strip() if owner_element else "Unknown"
+
+            language_stats = {}
+            language_section = soup.select_one('div.Layout-sidebar h2:-soup-contains("Languages")')
+            if language_section:
+                for tag in language_section.parent.select('ul.list-style-none li a'):
+                    if tag.select_one('span.color-fg-default.text-bold.mr-1'):
+                        try:
+                            language = tag.select('span')[0].text
+                            percentage = float(tag.select('span')[1].text.strip('%'))
+                            language_stats[language] = percentage
+                        except (IndexError, ValueError) as e:
+                            logger.warning(f"Failed to parse language stats: {e}")
+
+            item.extra = {
+                'owner': owner,
+                'language_stats': language_stats
             }
-        }
-        yield item
+            yield item
+        except Exception as e:
+            logger.exception("Error parsing detail page", response.url)
+            raise e
+
+
+
